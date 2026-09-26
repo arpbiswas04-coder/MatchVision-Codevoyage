@@ -45,12 +45,17 @@ def render_pitch_heatmap(counts, path, title, bounds, sample_count, fps):
     text("Display smoothing only; numeric bins unchanged. Colour scales are independent.", 35, canvas_h - 37, .44)
     text("Original calibration is unvalidated for a new camera view.", 35, canvas_h - 15, .4)
 
-    # Unregistered full-pitch context diagram: never place this analysis's points on it.
+    # Normalized context uses the same density, explicitly without global registration.
     rx, ry, rw, rh = canvas_w - 260, 165, 210, 324
-    text("PITCH REFERENCE", rx, ry - 48, .47)
-    text("No analysis data mapped", rx, ry - 27, .4)
+    text("NORMALIZED CONTEXT", rx, ry - 48, .44)
+    text("Not global pitch coordinates", rx, ry - 27, .38)
     cv2.rectangle(canvas, (rx, ry), (rx + rw, ry + rh), (35, 58, 31), -1)
-    line = (131, 157, 135)
+    context_density = cv2.resize(density, (rw, rh), interpolation=cv2.INTER_LINEAR)
+    context_heat = cv2.applyColorMap(np.uint8(np.clip(context_density * 255, 0, 255)), cv2.COLORMAP_TURBO)
+    context_alpha = (.7 * np.sqrt(context_density))[..., None]
+    region = canvas[ry:ry+rh, rx:rx+rw]
+    canvas[ry:ry+rh, rx:rx+rw] = np.uint8(region * (1-context_alpha) + context_heat * context_alpha)
+    line = (181, 207, 185)
     cv2.rectangle(canvas, (rx, ry), (rx + rw, ry + rh), line, 1)
     cv2.line(canvas, (rx, ry + rh // 2), (rx + rw, ry + rh // 2), line, 1)
     cv2.circle(canvas, (rx + rw // 2, ry + rh // 2), 28, line, 1)
@@ -59,6 +64,8 @@ def render_pitch_heatmap(counts, path, title, bounds, sample_count, fps):
         cv2.rectangle(canvas, (rx + 43, edge), (rx + rw - 43, edge + sign * 51), line, 1)
         cv2.rectangle(canvas, (rx + 76, edge), (rx + rw - 76, edge + sign * 17), line, 1)
         cv2.rectangle(canvas, (rx + 94, edge), (rx + rw - 94, edge - sign * 6), line, 1)
-    text("Reference only, not registration", rx - 5, ry + rh + 25, .35)
+    text("Axes normalized independently", rx - 5, ry + rh + 25, .35)
+    text("Same samples; not a metric map", rx - 5, ry + rh + 44, .35)
     if not cv2.imwrite(str(path), canvas):
         raise OSError(f"Could not write heatmap: {path}")
+

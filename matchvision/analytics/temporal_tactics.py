@@ -24,7 +24,26 @@ def temporal_tactics(team_frames, timeline, fps, bounds, formation_config=None):
         usable = [row for row in rows if row["positioned_player_count"] >= minimum_players]
         available = bool(rows) and len(rows) / fps >= min(5, seconds) and len(usable) / len(rows) >= minimum_coverage
         shape = _window(team_frames[start:start + step], start, fps, bounds, config)
+        observations = {}
+        for frame in team_frames[start:start + step]:
+            for player_id, point in frame.items():
+                value = observations.setdefault(player_id, [0.0, 0.0, 0])
+                value[0] += point[0]
+                value[1] += point[1]
+                value[2] += 1
+        nodes = [{"player_id": ident, "position": [value[0]/value[2], value[1]/value[2]],
+                  "samples": value[2], "coverage_percentage": 100*value[2]/len(rows)}
+                 for ident, value in observations.items() if value[2] >= max(2, math.ceil(.2 * len(rows)))]
+        nodes.sort(key=lambda item: item["position"][0])
+        bands = []
+        for node in nodes:
+            if not bands or node["position"][0] - bands[-1][-1]["position"][0] >= config.line_gap_m:
+                bands.append([])
+            bands[-1].append(node)
         row = {
+            "player_positions": nodes,
+            "spatial_bands": [{"player_ids": [node["player_id"] for node in band],
+                               "mean_longitudinal_m": sum(node["position"][0] for node in band)/len(band)} for band in bands],
             "start_seconds": start / fps, "end_seconds": (start + len(rows)) / fps,
             "available": available, "coverage_percentage": 100 * len(usable) / len(rows),
             "average_visible_players": sum(item["positioned_player_count"] for item in rows) / len(rows),
@@ -61,6 +80,8 @@ def temporal_tactics(team_frames, timeline, fps, bounds, formation_config=None):
         "average_centroid": [sum(row["centroid"][axis] for row in measured) / len(measured) for axis in (0, 1)] if measured else None,
         "coverage_percentage": 100 * len(measured) / len(timeline) if timeline else 0,
         "minimum_visible_players": minimum_players, "minimum_window_coverage": minimum_coverage,
+        "supported_formation_windows": len(supported),
+        "total_windows": len(windows),
         "window_seconds": seconds, "most_common_supported_formation": formation,
     }
     for field, name in (("width_m", "width_m"), ("length_m", "length_m"),
@@ -76,4 +97,5 @@ def temporal_tactics(team_frames, timeline, fps, bounds, formation_config=None):
         selected = sorted(available, key=lambda row: row[field], reverse=reverse)
         summary[name] = {key: selected[0][key] for key in ("start_seconds", "end_seconds", field)} if selected else None
     return {"summary": summary, "windows": windows}
+
 

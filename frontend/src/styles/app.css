@@ -433,3 +433,10 @@ td { font-variant-numeric: tabular-nums; }
   .report-table tr { break-inside: avoid; }
   .report-notes { padding: 12px 0; }
 }
+
+.team-pitch { margin: 20px 0; padding: 16px; background: #10261c; border-radius: 8px; }
+.team-pitch svg { width: 100%; max-height: 330px; display: block; }
+.team-pitch figcaption { color: var(--muted); font-size: .72rem; line-height: 1.6; margin-top: 12px; }
+.event-breakdown { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
+.event-breakdown span { padding: 7px 12px; background: #152b22; border-radius: 5px; font-size: .8rem; }
+@media print { .team-pitch { break-inside: avoid; } }

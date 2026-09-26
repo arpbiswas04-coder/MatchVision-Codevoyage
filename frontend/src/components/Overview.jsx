@@ -1,5 +1,5 @@
-import { MetricCard, SectionTitle } from './UI.jsx';
-import { isNumber, metric, notesFor } from '../lib/format.js';
+﻿import { MetricCard, SectionTitle } from './UI.jsx';
+import { isNumber, metric, notesFor, eventName } from '../lib/format.js';
 
 export default function Overview({ data, onReport }) {
   const teams = data.teams || [];
@@ -16,6 +16,7 @@ export default function Overview({ data, onReport }) {
   return <div className="tab-content">
     <SectionTitle eyebrow="THE MATCH AT A GLANCE" title="The bigger picture.">A view of the measurements available from your footage.</SectionTitle>
     <div className="metrics-grid">{cards.map(([label, value, hint, icon]) => <MetricCard key={label} {...{ label, value, hint, icon }} />)}</div>
+    <div className="event-breakdown">{Object.entries(data.counts?.events_by_type || {}).filter(([, count]) => isNumber(count)).map(([type, count]) => <span key={type}>{metric(count, "", 0)} {eventName(type)}</span>)}</div>
     {!cards.length && <p className="notice">Summary metrics are not available for this analysis.</p>}
     <div className="overview-columns"><section className="panel possession-panel"><div className="card-heading"><h3>Ball control</h3><span className="subtle-label">Estimated possession</span></div>
       {[1, 2].map(id => <div className="possession-row" key={id}><div><span><i className={`legend ${id === 1 ? 'green' : 'blue'}`} />Team {id}</span><strong>{metric(percentages[String(id)], '%')}</strong></div>{isNumber(percentages[String(id)]) ? <div className="possession-track"><span className={id === 1 ? 'team-one' : 'team-two'} style={{ width: `${Math.max(0, Math.min(100, percentages[String(id)]))}%` }} /></div> : <p className="muted small-text">No supported possession estimate.</p>}</div>)}
@@ -24,3 +25,4 @@ export default function Overview({ data, onReport }) {
     {notes.length > 0 && <details className="panel analysis-notes"><summary>Analysis notes <span>{notes.length} notes & limitations</span></summary><ul>{notes.map(note => <li key={note}>{note}</li>)}</ul></details>}
   </div>;
 }
+

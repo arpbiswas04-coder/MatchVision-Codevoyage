@@ -222,3 +222,13 @@ confidence thresholds were changed as part of this frontend implementation.
 
 See [ROBUSTNESS.md](../ROBUSTNESS.md) for current backend streaming changes, pitch-region heatmaps, stable possession/pass partners, tactical windows, report redesign and exact short/long-clip manual checks. This update changes backend analytics as well as UI; the original implementation notes above describe the earlier frontend-only task.
 
+
+## Current pass/event and team-structure presentation
+
+See [ANALYTICS_UPDATE.md](../ANALYTICS_UPDATE.md) for the exact file manifest and
+manual verification. Players now show simple pass totals with partner tooltips;
+Overview and Events use the common backend timeline and category counts. Tactics
+adds measured window-average player diagrams/bands and professional uncertainty
+labels. Heatmaps include the same density in a clearly labelled normalized (not
+globally registered) pitch context. Coach report adds passing and temporal-quality
+observations. The compact-summary/lazy-media architecture and existing styling remain.

@@ -99,7 +99,7 @@ def build_heatmaps(tracks, fps, pitch_vertices, output_directory=None, bins=(24,
         "coordinate_system": "transformed_pitch_meters",
         "rendering": {"style": "dark_pitch_region", "horizontal_axis": "y", "vertical_axis": "x_increasing_up",
                       "full_pitch_registration": False, "density_smoothing": "display_only",
-                      "reference_pitch": "illustration_only_no_data_mapped"},
+                      "reference_pitch": "normalized_density_context_not_global_coordinates"},
         "calibration": "original_fixed_pitch_region_unvalidated_for_input",
         "bounds": {"x_min": bounds[0], "x_max": bounds[1], "y_min": bounds[2], "y_max": bounds[3]},
         "grid": {"columns": bins[0], "rows": bins[1], "array_order": "y_then_x",
@@ -114,4 +114,5 @@ def build_heatmaps(tracks, fps, pitch_vertices, output_directory=None, bins=(24,
         "ball": make_map(ball, "ball.png", "Ball observed locations"),
         "excluded_samples": exclusions, "warnings": warnings,
     }
+
 

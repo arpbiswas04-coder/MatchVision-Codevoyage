@@ -1,5 +1,5 @@
 ﻿import { Icon, MetricCard } from './UI.jsx';
-import { clock, eventName, isNumber, metric, notesFor, possessionTime, teamName } from '../lib/format.js';
+import { clock, eventName, isNumber, metric, notesFor, possessionTime, teamName, formationLabel } from '../lib/format.js';
 
 export default function CoachReport({ data, filename, createdAt }) {
   const players = data.players || [];
@@ -24,14 +24,17 @@ export default function CoachReport({ data, filename, createdAt }) {
     <div className="report-meta">{createdAt && <span>Submitted: {new Date(createdAt).toLocaleString()}</span>}<span>Recorded observations · {data.status || 'Unavailable'}</span></div>
     <section><h3>Match snapshot</h3><div className="report-snapshot">{snapshot.map(([label, value]) => <MetricCard key={label} label={label} value={value} />)}</div></section>
     <section><h3>Key observations</h3><ul className="observation-cards">{observations.map(text => <li key={text}>{text}</li>)}</ul>{!observations.length && <p>No supported observations are available.</p>}</section>
-    <section><h3>Player performance</h3><p className="small-text muted">Top five displayed identities by measured distance.</p>
+    <section><h3>Passing</h3><div className="report-event-grid">{(data.teams || []).map(team => <MetricCard key={team.team_id} label={teamName(team.team_id) + ' completed passes'} value={metric(team.total_detected_successful_passes, '', 0)} />)}</div>
+      <ul>{players.filter(player => isNumber(player.successful_passes) && isNumber(player.passes_received)).sort((a, b) => (b.successful_passes+b.passes_received)-(a.successful_passes+a.passes_received)).slice(0, 3).map(player => <li key={player.player_id}>Player {player.player_id}: {player.successful_passes} sent, {player.passes_received} received.</li>)}</ul><p className="small-text muted">Most involved displayed identities by detected passes sent plus received. Full results retain all identities.</p>
+    </section>
+    <section><h3>Player movement</h3><p className="small-text muted">Top five displayed identities by measured distance.</p>
       {distances.length ? <div className="table-wrap"><table className="report-table"><thead><tr><th>Player</th><th>Team</th><th>Distance</th><th>Max speed</th><th>Possession</th><th>Passes sent</th></tr></thead><tbody>{distances.slice(0, 5).map(player => <tr key={player.player_id}><td>#{player.player_id}</td><td>{teamName(player.team_id)}</td><td>{metric(player.distance_m, 'm')}</td><td>{metric(player.max_speed_kmh, 'km/h')}</td><td>{possessionTime(player.possession_time_seconds)}</td><td>{metric(player.successful_passes, '', 0)}</td></tr>)}</tbody></table></div> : <p>Player distance rankings are unavailable.</p>}
     </section>
     <section><h3>Team shape</h3><div className="report-team-grid">{teams.map(team => {
       const shape = team.temporal?.summary || team.geometry || {};
       const formation = shape.most_common_supported_formation || team.formation || {};
       return <div className="report-team-card" key={team.team_id}><h4>Team {team.team_id}</h4><dl>
-        <div><dt>Observed formation</dt><dd>{formation.label || 'Unknown / insufficient tracking data'}</dd><small>Most frequent supported shape; not tactical intent.</small></div>
+        <div><dt>Observed formation</dt><dd>{formationLabel(formation)}</dd><small>Most frequent supported shape; not tactical intent.</small></div>
         <div><dt>Average width</dt><dd>{metric(shape.average_width_m, 'm')}</dd><small>Side-to-side spread.</small></div>
         <div><dt>Average depth</dt><dd>{metric(shape.average_length_m, 'm')}</dd><small>Front-to-back spread.</small></div>
         <div><dt>Compactness</dt><dd>{metric(shape.average_compactness_mean_radius_m, 'm')}</dd><small>Mean distance to the visible team centre.</small></div>
@@ -43,7 +46,9 @@ export default function CoachReport({ data, filename, createdAt }) {
       {(data.events || []).length > 0 && <ol className="report-timeline">{data.events.slice(-5).map((event, index) => <li key={index}><strong>{clock(event.timestamp)}</strong> {eventName(event.type)} · {teamName(event.team)}</li>)}</ol>}
       <p>{isNumber(data.counts?.highlights) ? metric(data.counts.highlights, '', 0) + ' highlight clips generated.' : 'Highlight assessment or export is unavailable.'}</p>
     </section>
+    <section><h3>Tactical observations</h3><ul>{teams.map(team => <li key={team.team_id}>Team {team.team_id}: {metric(team.temporal?.summary?.coverage_percentage, '%')} tactical coverage across {metric(team.temporal?.total_windows, '', 0)} windows; {metric(team.temporal?.summary?.supported_formation_windows, '', 0)} support a formation hypothesis. Visible geometry does not establish coaching intent.</li>)}</ul></section>
     <section className="report-notes"><h3>Analysis notes</h3><p>All values are estimates from the visible calibrated region. Stable player possession excludes unknown/interpolated ball frames. Zero means evaluated with no detected contribution; unavailable means insufficient evidence.</p><ul>{notes.map(note => <li key={note}>{note}</li>)}</ul></section>
     <footer className="report-footer">MatchVision · Video-Based Match Analytics for Teams<br /><span>Analysis reference: {data.analysis_id}</span></footer>
   </article>;
 }
+

@@ -1,6 +1,7 @@
 ﻿import { useState } from 'react';
+import TeamPitch from './TeamPitch.jsx';
 import { EmptyState, MetricCard, SectionTitle } from './UI.jsx';
-import { clock, isNumber, metric } from '../lib/format.js';
+import { clock, isNumber, metric, formationLabel } from '../lib/format.js';
 
 function TeamShape({ team }) {
   const [selected, setSelected] = useState(0);
@@ -13,10 +14,11 @@ function TeamShape({ team }) {
   return <section className="panel tactics-team">
     <div className="card-heading"><h3>Team {team.team_id}</h3><span className="subtle-label">Visible spatial shape</span></div>
     <div className="formation"><span>Most frequently observed supported shape</span>
-      <strong className={formation.status === 'heuristic_estimate' ? 'text-green' : 'unavailable-formation'}>{formation.label || 'Unknown / insufficient tracking data'}</strong>
+      <strong className={formation.status === 'heuristic_estimate' ? 'text-green' : 'unavailable-formation'}>{formationLabel(formation)}</strong>
       <p>{formation.reason || 'No supported formation estimate is available.'}</p>
       <small>Match-time support: {metric(formation.support_percentage ?? (isNumber(formation.supported_time_fraction) ? formation.supported_time_fraction * 100 : null), '%')} — a coverage measure, not a probability.</small>
     </div>
+    <TeamPitch window={window} coordinates={team.coordinate_system} />
     <div className="tactical-metrics">
       <MetricCard label="Average width" value={metric(shape.average_width_m, 'm')} hint="How spread out the visible team is from side to side." />
       <MetricCard label="Average depth" value={metric(shape.average_length_m, 'm')} hint="How stretched the visible team is from front to back." />
@@ -34,7 +36,9 @@ function TeamShape({ team }) {
     {windows.length > 0 && <div className="tactical-window">
       <label>Explore a time window<select value={selected} onChange={event => setSelected(Number(event.target.value))}>{windows.map((item, index) => <option key={index} value={index}>{period(item)}</option>)}</select></label>
       {temporal.omitted_windows > 0 && <p className="small-text muted">{windows.length} representative windows shown; full results retain all {temporal.total_windows}.</p>}
-      <dl className="detail-list"><div><dt>Average visible players</dt><dd>{metric(window.average_visible_players)}</dd></div><div><dt>Coverage</dt><dd>{metric(window.coverage_percentage, '%')}</dd></div><div><dt>Width / depth</dt><dd>{metric(window.average_width_m, 'm')} / {metric(window.average_length_m, 'm')}</dd></div><div><dt>Compactness</dt><dd>{metric(window.average_compactness_mean_radius_m, 'm')}</dd></div><div><dt>Observed shape</dt><dd>{window.formation?.label || 'Unavailable'}</dd></div></dl>
+      <dl className="detail-list"><div><dt>Average visible players</dt><dd>{metric(window.average_visible_players)}</dd></div><div><dt>Coverage</dt><dd>{metric(window.coverage_percentage, '%')}</dd></div><div><dt>Width / depth</dt><dd>{metric(window.average_width_m, 'm')} / {metric(window.average_length_m, 'm')}</dd></div><div><dt>Compactness</dt><dd>{metric(window.average_compactness_mean_radius_m, 'm')}</dd></div><div><dt>Observed shape</dt><dd>{formationLabel(window.formation)}</dd></div></dl>
+      <p className="small-text muted">Window centroid (length / width): {Array.isArray(window.centroid) ? window.centroid.map(value => metric(value, "m")).join(" / ") : "Limited evidence"}.</p>
+      <p className="small-text muted">Observed longitudinal bands: {(window.spatial_bands || []).map(band => band.player_ids.length).join(" / ") || "Limited evidence"}. Spatial grouping only, not tactical roles.</p>
       {!window.available && <p className="notice">Not enough visible-player coverage for geometry in this period.</p>}
     </div>}
   </section>;
@@ -45,4 +49,6 @@ export default function Tactics({ data }) {
     {teams.length ? <div className="tactics-grid">{teams.map(team => <TeamShape team={team} key={team.team_id} />)}</div> : <EmptyState title="Tactical information is unavailable">Usable positions and sufficient player coverage are needed.</EmptyState>}
   </div>;
 }
+
+
 

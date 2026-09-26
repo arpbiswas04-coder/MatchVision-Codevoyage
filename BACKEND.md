@@ -433,3 +433,11 @@ Send continuity-api.log, the before/after counts, dashboard-summary.json, and a
 timestamped screenshot/clip showing any incorrect identity change if something
 fails. Full results retain the raw IDs needed to inspect associations.
 
+
+## Current pass/event and spatial analytics update
+
+See [ANALYTICS_UPDATE.md](ANALYTICS_UPDATE.md) for the latest pass rules, evaluation
+coverage vs zero semantics, sender/receiver aggregation, possession-change/recovery
+categories, confidence tiers, calibration limits and manual short/long-video checks.
+This supersedes earlier notes requiring each player to possess the ball for pass
+statistics. Full events remain the source of truth. Streaming/GPU behavior is unchanged.
