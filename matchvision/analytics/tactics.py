@@ -4,6 +4,7 @@ import math
 from numbers import Integral, Real
 
 from .formation import estimate_formations
+from .temporal_tactics import temporal_tactics
 
 
 def _id(value):
@@ -169,6 +170,7 @@ def build_tactics(tracks, events, fps, pitch_vertices=None, *, formation_config=
                                 "position_method": "average_of_valid_same_team_positions_across_analysis"},
             "timeline": timeline, "summary": _geometry_summary(timeline),
             "formation": estimate_formations(team_frames, fps, bounds, formation_config),
+            "temporal": temporal_tactics(team_frames, timeline, fps, bounds, formation_config),
         }
     return {
         "schema_version": "1.0", "players": players, "teams": teams,
@@ -196,4 +198,5 @@ def build_tactics(tracks, events, fps, pitch_vertices=None, *, formation_config=
             "Formation labels are conservative spatial hypotheses, not verified tactical intent.",
         ],
     }
+
 

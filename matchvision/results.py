@@ -19,7 +19,7 @@ def to_json_value(value):
 
 def build_results(analysis_id, metadata, tracks, movement, colors, possession, directory, warnings,
                   *, pitch_vertices=None, pass_config=None, formation_config=None,
-                  shot_config=None, shot_calibration=None):
+                  shot_config=None, shot_calibration=None, progress_callback=None):
     from view_transformer import ViewTransformer
     from .analytics import build_analytics
 
@@ -27,7 +27,8 @@ def build_results(analysis_id, metadata, tracks, movement, colors, possession, d
         pitch_vertices = ViewTransformer().target_vertices
     analytics = build_analytics(tracks, metadata["fps"], possession, colors, pitch_vertices, directory,
                                 pass_config=pass_config, formation_config=formation_config,
-                                shot_config=shot_config, shot_calibration=shot_calibration)
+                                shot_config=shot_config, shot_calibration=shot_calibration,
+                                progress_callback=progress_callback)
     result_warnings = list(warnings) + analytics["heatmaps"]["warnings"]
     return to_json_value({
         "schema_version": "2.3", "analysis_id": analysis_id, "status": "completed",
@@ -47,6 +48,7 @@ def build_results(analysis_id, metadata, tracks, movement, colors, possession, d
                    for index in range(metadata["frame_count"])],
         "warnings": result_warnings,
     })
+
 
 
 

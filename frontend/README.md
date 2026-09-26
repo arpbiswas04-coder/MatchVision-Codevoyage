@@ -217,3 +217,8 @@ Do not assume navigating away cancels a backend job.
 
 Do not send the video itself unless needed later. No backend algorithms or
 confidence thresholds were changed as part of this frontend implementation.
+
+## Prompt 9 improvements
+
+See [ROBUSTNESS.md](../ROBUSTNESS.md) for current backend streaming changes, pitch-region heatmaps, stable possession/pass partners, tactical windows, report redesign and exact short/long-clip manual checks. This update changes backend analytics as well as UI; the original implementation notes above describe the earlier frontend-only task.
+

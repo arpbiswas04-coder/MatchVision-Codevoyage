@@ -1,4 +1,4 @@
-export const isNumber = value => typeof value === 'number' && Number.isFinite(value);
+﻿export const isNumber = value => typeof value === 'number' && Number.isFinite(value);
 export function metric(value, unit = '', digits = 1) {
   return isNumber(value) ? `${value.toLocaleString(undefined, { maximumFractionDigits: digits })}${unit ? ' ' + unit : ''}` : 'Unavailable';
 }
@@ -19,6 +19,7 @@ export function notesFor(data) {
     ...(data.tactics?.limitations || []), ...(data.highlight_generation?.warnings || []),
     ...(Array.isArray(data.event_detection?.passes?.limitations) ? data.event_detection.passes.limitations : []),
     ...(Array.isArray(data.event_detection?.shots?.limitations) ? data.event_detection.shots.limitations : []),
+    ...(Array.isArray(data.event_detection?.shots?.reasons) ? data.event_detection.shots.reasons : []),
     data.event_detection?.shots?.reason,
   ];
   return [...new Set(values.filter(item => typeof item === 'string' && item.trim()))];
@@ -29,3 +30,15 @@ export function rememberMatch(record) {
 export function lastMatch() {
   try { return JSON.parse(sessionStorage.getItem('matchvision:last') || 'null'); } catch { return null; }
 }
+
+export function possessionTime(value) {
+  if (!isNumber(value)) return 'Unavailable';
+  return value < 60 ? metric(value, 's', 2) : clock(value);
+}
+export function passPartners(total, partners, direction) {
+  if (!isNumber(total)) return 'Unavailable';
+  if (total === 0) return '0';
+  const names = (partners || []).map(item => '#' + item.player_id + ' (' + item.count + ')').join(', ');
+  return String(total) + (names ? ' ' + direction + ' ' + names : '');
+}
+

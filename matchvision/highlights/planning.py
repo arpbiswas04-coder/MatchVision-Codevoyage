@@ -17,7 +17,7 @@ class HighlightConfig:
     max_clips: int = 20
     source: str = "original"
     backend: str = "auto"
-    export_timeout_seconds: float = 120.0
+    export_timeout_seconds: float = 600.0
 
     def validate(self):
         # Validation happens within the optional generation stage, so invalid
@@ -107,3 +107,4 @@ def plan_highlights(events, duration_seconds, config=None):
     return {"windows": sorted(kept, key=lambda window: window["start"]),
             "eligible_events": sum(len(window["events"]) for window in windows),
             "merged_window_count": len(windows), "omitted_windows": omitted}
+

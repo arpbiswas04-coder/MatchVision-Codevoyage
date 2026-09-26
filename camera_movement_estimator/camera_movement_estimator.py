@@ -1,4 +1,4 @@
-import pickle
+﻿import pickle
 import cv2
 import numpy as np
 import os
@@ -44,7 +44,7 @@ class CameraMovementEstimator():
                     position_adjusted = (position[0] - camera_movement[0], position[1] - camera_movement[1])
                     tracks[object][frame_num][track_id]['position_adjusted'] = position_adjusted
 
-    def get_camera_movement(self, frames, read_from_stub=False, stub_path=None):
+    def get_camera_movement(self, frames, read_from_stub=False, stub_path=None, progress_callback=None):
         # Read the stub
         if read_from_stub and stub_path is not None and os.path.exists(stub_path):
             with open(stub_path, 'rb') as f:
@@ -56,6 +56,8 @@ class CameraMovementEstimator():
         old_features = cv2.goodFeaturesToTrack(old_gray, **self.features)
 
         for frame_num in range(1, len(frames)):
+            if progress_callback and frame_num % 30 == 0:
+                progress_callback(frame_num, len(frames))
             frame_gray = cv2.cvtColor(frames[frame_num], cv2.COLOR_BGR2GRAY)
             if old_features is None or len(old_features) == 0:
                 old_features = cv2.goodFeaturesToTrack(old_gray, **self.features)
@@ -117,3 +119,4 @@ class CameraMovementEstimator():
             output_frames.append(frame)
 
         return output_frames
+

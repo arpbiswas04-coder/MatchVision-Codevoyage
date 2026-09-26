@@ -1,0 +1,14 @@
+﻿# Backend (Python 3.10+); no CUDA/PyTorch wheel replacement is forced.
+fastapi>=0.115
+uvicorn>=0.30
+python-multipart>=0.0.18
+pydantic>=2
+# Existing analysis engine dependencies.
+ultralytics
+supervision
+opencv-python
+numpy
+pandas
+scikit-learn
+torch
+torchvision

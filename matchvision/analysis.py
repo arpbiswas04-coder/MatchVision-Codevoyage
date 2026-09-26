@@ -1,13 +1,17 @@
 ﻿"""Orchestrate the existing football analysis components for one isolated run."""
 import json
+import traceback
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
+from uuid import uuid4, UUID
+from .progress import report_progress
 
 import numpy as np
 
-from util import read_video, save_video
+from util import save_video
+from util.video_source import VideoFrames
+from .json_io import write_json
 from trackers import Tracker
 from team_assigner import TeamAssigner
 from player_ball_assigner import PlayerBallAssigner
@@ -24,7 +28,7 @@ class AnalysisError(RuntimeError):
     """A failed analysis; the original exception is available as __cause__."""
 
 
-def _assign_teams(frames, tracks, warnings):
+def _assign_teams(frames, tracks, warnings, progress_callback=None):
     assigner = TeamAssigner(legacy_player_override=False)
     # Some videos begin before any players appear. Fit on the first usable frame.
     for frame, players in zip(frames, tracks["players"]):
@@ -41,7 +45,9 @@ def _assign_teams(frames, tracks, warnings):
     if not assigner.team_colors:
         warnings.append("No frame had two usable players; team assignment is unavailable.")
         return assigner
-    for frame, players in zip(frames, tracks["players"]):
+    for index, (frame, players) in enumerate(zip(frames, tracks["players"])):
+        if progress_callback and index % 30 == 0:
+            progress_callback(index, len(frames))
         for player_id, player in players.items():
             try:
                 team = assigner.get_player_team(frame, player["bbox"], player_id)
@@ -52,7 +58,8 @@ def _assign_teams(frames, tracks, warnings):
 
 
 def analyze_match(input_video_path, output_directory, *, pass_config=None, formation_config=None,
-                  shot_config=None, shot_calibration=None, highlight_config=None):
+                  shot_config=None, shot_calibration=None, highlight_config=None,
+                  analysis_id=None, progress_callback=None):
     """Analyze a local uploaded video and return a strict JSON-compatible dict.
 
     Each call uses fresh YOLO/ByteTrack state, never reads or writes old stubs,
@@ -61,22 +68,42 @@ def analyze_match(input_video_path, output_directory, *, pass_config=None, forma
     use the original upload by default; export failures are returned as diagnostics.
     highlight_config accepts a HighlightConfig instance or a configuration dict.
     """
-    analysis_id = uuid4().hex
+    if analysis_id is None:
+        analysis_id = uuid4().hex
+    elif not isinstance(analysis_id, str) or UUID(analysis_id).hex != analysis_id:
+        raise ValueError("analysis_id must be a canonical UUID hex string")
+    frames = None
     run_directory = None
+    run_created = False
     stage = "validate input"
+
+    def notify(percent, label):
+        nonlocal stage
+        stage = label
+        logger.info("Analysis %s: %s (%s%%)", analysis_id, label, percent)
+        report_progress(progress_callback, percent, label)
     try:
+        notify(5, "Preparing video")
         logger.info("Starting analysis %s: %s", analysis_id, input_video_path)
         if not MODEL_PATH.is_file():
             raise FileNotFoundError(f"YOLO model is missing: {MODEL_PATH}")
-        frames, metadata = read_video(input_video_path, return_metadata=True)
+        frames = VideoFrames(input_video_path)
+        metadata = frames.metadata
         run_directory = Path(output_directory).expanduser().resolve() / analysis_id
         run_directory.mkdir(parents=True, exist_ok=False)
+        run_created = True
         fps = metadata["fps"]
-        logger.info("Decoded %d frames at %.6g FPS", len(frames), fps)
+        logger.info("Source reports %d frames at %.6g FPS", len(frames), fps)
 
         stage = "detect and track"
+        notify(8, "Detecting and tracking players")
         tracker = Tracker(str(MODEL_PATH), frame_rate=fps)
-        tracks = tracker.get_object_tracks(frames, read_from_stub=False, stub_path=None)
+        tracks = tracker.get_object_tracks(
+            frames, read_from_stub=False, stub_path=None,
+            progress_callback=lambda done, total: notify(
+                min(40, 8 + int(32 * done / max(1, total))),
+                f"Detecting and tracking players: {done}/{total} frames"))
+        tracker.release_model()
         warnings = [
             "Speed and distance use the original fixed pitch calibration, which must "
             "be recalibrated for a different camera view. Values are estimates.",
@@ -92,8 +119,12 @@ def analyze_match(input_video_path, output_directory, *, pass_config=None, forma
         tracker.add_position_to_tracks(tracks)
 
         stage = "camera movement and perspective"
+        notify(42, "Camera compensation and movement estimates")
         camera = CameraMovementEstimator(frames[0])
-        movement = camera.get_camera_movement(frames, read_from_stub=False, stub_path=None)
+        movement = camera.get_camera_movement(
+            frames, read_from_stub=False, stub_path=None,
+            progress_callback=lambda done, total: notify(
+                42 + int(10 * done / max(1, total)), f"Camera compensation: {done}/{total} frames"))
         camera.add_adjust_positions_to_tracks(tracks, movement)
         view_transformer = ViewTransformer()
         view_transformer.add_transformed_position_to_tracks(tracks)
@@ -101,8 +132,12 @@ def analyze_match(input_video_path, output_directory, *, pass_config=None, forma
         speed.add_speed_and_distance_to_tracks(tracks)
 
         stage = "teams and possession"
+        notify(55, "Assigning teams")
         logger.info("Assigning teams and possession")
-        teams = _assign_teams(frames, tracks, warnings)
+        teams = _assign_teams(frames, tracks, warnings,
+            progress_callback=lambda done, total: notify(
+                55 + int(4 * done / max(1, total)), f"Assigning teams: {done}/{total} frames"))
+        notify(60, "Calculating possession")
         possession = []
         ball_assigner = PlayerBallAssigner()
         for frame_num, players in enumerate(tracks["players"]):
@@ -117,30 +152,41 @@ def analyze_match(input_video_path, output_directory, *, pass_config=None, forma
                 # Preserve carry-forward possession; leading unknown frames are 0.
                 possession.append(possession[-1] if possession else 0)
 
-        stage = "annotated video"
-        logger.info("Rendering annotations")
-        output_frames = tracker.draw_annotations(frames, tracks, np.asarray(possession))
-        del frames
-        output_frames = camera.draw_camera_movement(output_frames, movement)
-        speed.draw_speed_and_distance(output_frames, tracks)
+        notify(65, "Generating annotated video")
         video_path = run_directory / "output_video.avi"
-        save_video(output_frames, video_path, fps=fps)
-        del output_frames
+
+        def annotated_frames():
+            rendered = 0
+            for index, frame in enumerate(tracker.iter_annotations(frames, tracks, np.asarray(possession))):
+                frame = camera.draw_camera_movement([frame], [movement[index]])[0]
+                speed.draw_speed_and_distance([frame], {key: [rows[index]] for key, rows in tracks.items()})
+                rendered += 1
+                if index % 30 == 0:
+                    notify(65 + int(9 * index / len(frames)), f"Generating annotated video: {index}/{len(frames)} frames")
+                yield frame
+            if rendered != len(tracks["players"]):
+                raise OSError("Annotated pass decoded a different frame count from the tracking pass")
+
+        save_video(annotated_frames(), video_path, fps=fps)
 
         stage = "analytics and results"
+        notify(75, "Calculating player and team statistics")
         logger.info("Building statistics, heatmaps, pass/shot hypotheses and tactics")
         result = build_results(analysis_id, metadata, tracks, movement, teams.team_colors,
                                possession, run_directory, warnings,
                                pitch_vertices=view_transformer.target_vertices, pass_config=pass_config,
                                formation_config=formation_config, shot_config=shot_config,
-                               shot_calibration=shot_calibration)
+                               shot_calibration=shot_calibration, progress_callback=notify)
+        del tracks, movement, possession
+        result["tracking"] = getattr(tracker, "identity_diagnostics", {})
         result["created_at"] = datetime.now(timezone.utc).isoformat()
         result.update(highlights=[], highlight_generation={"status": "not_generated"})
         json_path = run_directory / "analysis.json"
-        temporary_path = run_directory / "analysis.json.tmp"
+
+        notify(89, 'Saving analysis results')
         # Save the complete main analysis before optional encoders consume disk space.
-        temporary_path.write_text(json.dumps(result, indent=2, allow_nan=False), encoding="utf-8")
-        temporary_path.replace(json_path)
+        write_json(json_path, result)
+        notify(90, "Generating highlights")
         # Optional exports cannot invalidate the completed CV/analytics pipeline.
         try:
             from .highlights import generate_highlights
@@ -153,31 +199,30 @@ def analyze_match(input_video_path, output_directory, *, pass_config=None, forma
             logger.exception("Optional highlight stage failed; preserving analysis")
             result.update(highlights=[], highlight_generation={
                 "status": "failed", "warnings": ["Highlight generation unavailable; see the local analysis log."]})
+        notify(98, 'Finalising analysis results')
         try:
-            temporary_path.write_text(json.dumps(result, indent=2, allow_nan=False), encoding="utf-8")
-            temporary_path.replace(json_path)
+            write_json(json_path, result)
         except Exception:
             logger.exception("Could not persist highlight metadata; the original analysis JSON is preserved")
             result["highlight_generation"].setdefault("warnings", []).append(
                 "Updated highlight metadata could not be saved; analysis.json retains the main analysis.")
+        notify(100, "Analysis engine complete")
         for warning in warnings:
             logger.warning(warning)
         logger.info("Analysis %s complete: %s", analysis_id, video_path)
         return result
     except Exception as exc:
         logger.exception("Analysis %s failed during %s", analysis_id, stage)
-        if run_directory is not None and run_directory.is_dir():
+        if run_created and run_directory is not None and run_directory.is_dir():
             try:
                 (run_directory / "failure.json").write_text(json.dumps({
                     "analysis_id": analysis_id, "status": "failed", "stage": stage,
-                    "error": str(exc),
+                    "error": str(exc), "exception_type": type(exc).__name__, "traceback": traceback.format_exc(),
                 }), encoding="utf-8")
             except OSError:
                 logger.exception("Could not write failure metadata")
         raise AnalysisError(f"Analysis {analysis_id} failed during {stage}: {exc}") from exc
-
-
-
-
-
+    finally:
+        if frames is not None:
+            frames.close()
 

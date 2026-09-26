@@ -1,4 +1,4 @@
-from ultralytics import YOLO
+﻿from ultralytics import YOLO
 import supervision as sv
 import pickle
 import os
@@ -6,6 +6,10 @@ import cv2
 import numpy as np
 import pandas as pd
 import logging
+import torch
+import gc
+from itertools import islice
+from .player_continuity import ContinuityConfig, relink_players
 
 
 def get_center_of_bbox(bbox):
@@ -22,8 +26,22 @@ def get_foot_position(bbox):
 
 class Tracker:
     def __init__(self, model_path, frame_rate=30):
+        self.device = 0 if torch.cuda.is_available() else "cpu"
+        device_name = (
+            f"{torch.cuda.get_device_name(0)} (CUDA)"
+            if self.device == 0 else "CPU"
+        )
+        # Use the application's logger so both CLI and API workers show selection.
+        logging.getLogger("matchvision.inference").info(
+            "MatchVision inference device: %s", device_name
+        )
         self.model = YOLO(model_path)
-        self.tracker = sv.ByteTrack(frame_rate=frame_rate)
+        self.frame_rate = frame_rate
+        self.continuity_config = ContinuityConfig.from_environment()
+        # Supervision scales this parameter from its 30-FPS reference to actual FPS.
+        self.tracker = sv.ByteTrack(
+            frame_rate=frame_rate,
+            lost_track_buffer=max(1, round(30 * self.continuity_config.lost_seconds)))
 
     def add_position_to_tracks(sekf, tracks):
         for object, object_tracks in tracks.items():
@@ -48,22 +66,65 @@ class Tracker:
 
         return ball_positions
 
-    def detect_frames(self, frames):
-        batch_size = 20
-        detections = []
-        for i in range(0, len(frames), batch_size):
-            logging.getLogger(__name__).info("Detecting frames %d-%d of %d", i + 1, min(i + batch_size, len(frames)), len(frames))
-            detections_batch = self.model.predict(frames[i:i + batch_size], conf=0.1, verbose=False)
-            detections += detections_batch
-        return detections
+    def detect_frames(self, frames, progress_callback=None):
+        """Yield CPU results in small batches; retain no match-long tensor list."""
+        batch_size = int(os.getenv("MATCHVISION_YOLO_BATCH_SIZE", "4"))
+        if batch_size < 1:
+            raise ValueError("MATCHVISION_YOLO_BATCH_SIZE must be positive")
+        iterator = iter(frames)
+        processed = 0
 
-    def get_object_tracks(self, frames, read_from_stub=False, stub_path=None):
+        def predict(batch):
+            try:
+                results = self.model.predict(batch, conf=0.1, verbose=False, device=self.device)
+                cpu_results = [result.cpu() for result in results]
+                del results
+                return cpu_results
+            except torch.cuda.OutOfMemoryError:
+                if self.device == "cpu" or len(batch) <= 1:
+                    raise
+                gc.collect()
+                torch.cuda.empty_cache()
+                return None
+
+        try:
+            while batch := list(islice(iterator, batch_size)):
+                pending = [batch]
+                while pending:
+                    part = pending.pop(0)
+                    results = predict(part)
+                    if results is None:
+                        gc.collect()
+                        torch.cuda.empty_cache()
+                        batch_size = max(1, len(part) // 2)
+                        logging.getLogger("matchvision.inference").warning(
+                            "CUDA memory pressure; retrying with batch size %d", batch_size)
+                        pending[0:0] = [part[:batch_size], part[batch_size:]]
+                        continue
+                    for result in results:
+                        yield result
+                        processed += 1
+                    del results
+                if progress_callback:
+                    progress_callback(processed, len(frames))
+                del batch
+        finally:
+            if hasattr(iterator, "close"):
+                iterator.close()
+
+    def release_model(self):
+        self.model = None
+        gc.collect()
+        if self.device != "cpu":
+            torch.cuda.empty_cache()
+
+    def get_object_tracks(self, frames, read_from_stub=False, stub_path=None, progress_callback=None):
         if read_from_stub and stub_path is not None and os.path.exists(stub_path):
             with open(stub_path, 'rb') as f:
                 tracks = pickle.load(f)
             return tracks
 
-        detections = self.detect_frames(frames)
+        detections = self.detect_frames(frames, progress_callback)
 
         tracks = {
             "players": [],
@@ -101,6 +162,16 @@ class Tracker:
 
                 if cls_id == cls_names_inv['ball']:
                     tracks["ball"][frame_num][1] = {"bbox": bbox}
+
+        if hasattr(frames, "set_decoded_count"):
+            frames.set_decoded_count(len(tracks["players"]))
+        self.identity_diagnostics = relink_players(
+            tracks["players"], frames, self.frame_rate, self.continuity_config)
+        logging.getLogger("matchvision.tracking").info(
+            "Player continuity: %d raw tracks -> %d logical players (%d accepted links)",
+            self.identity_diagnostics["raw_player_track_count"],
+            self.identity_diagnostics["logical_player_count"],
+            self.identity_diagnostics["accepted_links"])
 
         if stub_path is not None:
             with open(stub_path, 'wb') as f:
@@ -193,7 +264,11 @@ class Tracker:
         return frame
 
     def draw_annotations(self, video_frames, tracks, team_ball_control):
-        output_video_frames = []
+        # Legacy list-returning API remains available.
+        return list(self.iter_annotations(video_frames, tracks, team_ball_control))
+
+    def iter_annotations(self, video_frames, tracks, team_ball_control):
+
         for frame_num, frame in enumerate(video_frames):
             frame = frame.copy()
 
@@ -216,6 +291,10 @@ class Tracker:
 
             frame = self.draw_team_ball_control(frame, frame_num, team_ball_control)
 
-            output_video_frames.append(frame)
+            yield frame
 
-        return output_video_frames
+
+
+
+
+

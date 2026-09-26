@@ -1,5 +1,6 @@
 ﻿"""Conservative pass inference from observed player possession, never team carry-forward."""
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+from collections import Counter
 import logging
 import math
 from numbers import Integral, Real
@@ -97,6 +98,8 @@ class _PossessionRun:
     first_position: tuple | None
     last_position: tuple | None
     support: int = 1
+    observed_frames: list = field(default_factory=list)
+    credited_count: int = 0
 
     @property
     def key(self):
@@ -158,6 +161,7 @@ def detect_passes(tracks, fps, config=None):
     candidate = active = None
     missing_run = 0
     events, stable_players = [], {}
+    confirmed_owners = {}
     coverage = {"owned": 0, "unassigned": 0, "unobserved": 0, "ambiguous": 0}
     rejected_identity_transitions = 0
     for frame_index, players in enumerate(player_frames):
@@ -179,10 +183,12 @@ def detect_passes(tracks, fps, config=None):
         if (candidate is None or candidate.key != key
                 or frame_index - candidate.last_frame - 1 > limits["max_evidence_gap_frames"]):
             candidate = _PossessionRun(player_id, team, frame_index, frame_index, position, position)
+            candidate.observed_frames.append(frame_index)
         else:
             candidate.last_frame = frame_index
             candidate.last_position = position
             candidate.support += 1
+            candidate.observed_frames.append(frame_index)
 
         # Returning to the confirmed owner cancels a noisy handoff. Only observed
         # evidence refreshes the source's release position/time, never carry-forward.
@@ -195,6 +201,9 @@ def detect_passes(tracks, fps, config=None):
                 or candidate.support_ratio < config.minimum_support_ratio):
             continue
         stable_players[str(player_id)] = team
+        for supported_frame in candidate.observed_frames[candidate.credited_count:]:
+            confirmed_owners[supported_frame] = player_id
+        candidate.credited_count = len(candidate.observed_frames)
         if active is not None and active.key != key:
             if (active.team == team and active.player_id != player_id
                     and active.support_ratio >= config.minimum_support_ratio
@@ -207,7 +216,17 @@ def detect_passes(tracks, fps, config=None):
                     rejected_identity_transitions += 1
         active = candidate
 
+    possession_counts = Counter(confirmed_owners.values())
+    possession_evaluated = Counter()
+    for index in confirmed_owners:
+        for raw_id in player_frames[index]:
+            player_id = _player_id(raw_id)
+            if player_id is not None and player_id not in conflicting_ids:
+                possession_evaluated[player_id] += 1
     metadata = {
+        "stable_possession_frames": {str(key): value for key, value in possession_counts.items()},
+        "stable_possession_evaluated_frames": {str(key): value for key, value in possession_evaluated.items()},
+        "known_stable_possession_frames": len(confirmed_owners),
         "status": "completed" if stable_players else "insufficient_data",
         "detectors": ["pass"], "method": "debounced_observed_player_possession",
         "config_seconds": asdict(config), "frame_thresholds": limits, "fps": float(fps),
@@ -232,17 +251,29 @@ def detect_passes(tracks, fps, config=None):
 
 
 def add_pass_statistics(players, teams, detection):
-    """Add detected-event counts; unavailable identity evidence is represented by null."""
-    events = detection["events"]
-    stable_players = detection["event_detection"]["stable_players"]
+    """Counts and relationships all come from the common detected-event timeline."""
+    events = [event for event in detection["events"] if event.get("type") == "pass"]
+    metadata = detection["event_detection"]
+    stable_players = metadata["stable_players"]
+    fps = metadata["fps"]
+    known = metadata.get("known_stable_possession_frames", 0)
     for player in players:
         player_id = player["player_id"]
         available = str(player_id) in stable_players
+        sent = Counter(e["player_to"] for e in events if e["player_from"] == player_id)
+        received = Counter(e["player_from"] for e in events if e["player_to"] == player_id)
         player["pass_statistics_available"] = available
-        player["successful_passes"] = sum(e["player_from"] == player_id for e in events) if available else None
-        player["passes_received"] = sum(e["player_to"] == player_id for e in events) if available else None
+        player["successful_passes"] = sum(sent.values()) if available else None
+        player["passes_received"] = sum(received.values()) if available else None
+        player["passes_sent_to"] = [{"player_id": key, "count": count} for key, count in sorted(sent.items())] if available else None
+        player["passes_received_from"] = [{"player_id": key, "count": count} for key, count in sorted(received.items())] if available else None
+        evaluated = metadata.get("stable_possession_evaluated_frames", {}).get(str(player_id), 0)
+        count = metadata.get("stable_possession_frames", {}).get(str(player_id), 0)
+        player["possession_evaluated_frames"] = evaluated
+        player["possession_frames"] = count if evaluated else None
+        player["possession_time_seconds"] = count / fps if evaluated else None
+        player["possession_percentage_of_known_possession"] = 100 * count / known if evaluated and known else None
     for team in teams:
         available = team["team_id"] in stable_players.values()
         team["pass_statistics_available"] = available
         team["total_detected_successful_passes"] = sum(e["team"] == team["team_id"] for e in events) if available else None
-

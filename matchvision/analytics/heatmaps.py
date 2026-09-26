@@ -1,10 +1,11 @@
-"""Pitch-space occupancy histograms and PNG previews, using NumPy and OpenCV."""
+﻿"""Pitch-space occupancy histograms and PNG previews, using NumPy and OpenCV."""
 import logging
 import math
 from pathlib import Path
 
 import cv2
 import numpy as np
+from .pitch_rendering import render_pitch_heatmap
 
 logger = logging.getLogger(__name__)
 
@@ -22,39 +23,7 @@ def _position(track, bounds):
     return [x, y]
 
 
-def _render(counts, path, title, bounds, sample_count, fps):
-    """Render the calibrated rectangle, not a fictitious full-field outline."""
-    maximum = float(counts.max())
-    intensity = np.rint(counts / maximum * 255).astype(np.uint8)
-    pixels = cv2.applyColorMap(intensity, cv2.COLORMAP_INFERNO)
-    # Histogram rows ascend in y; flip to put y_min at the bottom of the image.
-    plot_height = 600
-    plot_width = max(160, min(900, round(plot_height * (bounds[1] - bounds[0]) / (bounds[3] - bounds[2]))))
-    pixels = cv2.resize(np.flipud(pixels), (plot_width, plot_height), interpolation=cv2.INTER_NEAREST)
-    canvas = np.full((plot_height + 150, max(plot_width + 240, 650), 3), 250, np.uint8)
-    canvas[65:65 + plot_height, 55:55 + plot_width] = pixels
-    cv2.rectangle(canvas, (54, 64), (55 + plot_width, 65 + plot_height), (40, 40, 40), 1)
-    bar_x = plot_width + 90
-    ramp = np.linspace(255, 0, 200).astype(np.uint8).reshape(200, 1)
-    bar = cv2.resize(cv2.applyColorMap(ramp, cv2.COLORMAP_INFERNO), (20, 200))
-    canvas[100:300, bar_x:bar_x + 20] = bar
-    cv2.putText(canvas, str(int(maximum)), (bar_x + 28, 111), cv2.FONT_HERSHEY_SIMPLEX,
-                0.5, (30, 30, 30), 1, cv2.LINE_AA)
-    cv2.putText(canvas, "0", (bar_x + 28, 299), cv2.FONT_HERSHEY_SIMPLEX,
-                0.5, (30, 30, 30), 1, cv2.LINE_AA)
-    cv2.putText(canvas, "Samples / cell", (bar_x - 5, 85), cv2.FONT_HERSHEY_SIMPLEX,
-                0.46, (30, 30, 30), 1, cv2.LINE_AA)
-    lines = [
-        (title, (15, 25)),
-        (f'{sample_count} samples | {sample_count / fps:.2f} sample-seconds', (15, 48)),
-        (f'x: {bounds[0]:.2f} to {bounds[1]:.2f} m; y: {bounds[2]:.2f} to {bounds[3]:.2f} m (up)', (15, plot_height + 95)),
-        (f'Cell scale: 0 to {int(maximum)} samples (independent per image)', (15, plot_height + 117)),
-        ('Existing calibrated region; calibration unvalidated for new views', (15, plot_height + 139)),
-    ]
-    for text, origin in lines:
-        cv2.putText(canvas, text, origin, cv2.FONT_HERSHEY_SIMPLEX, 0.46, (30, 30, 30), 1, cv2.LINE_AA)
-    if not cv2.imwrite(str(path), canvas):
-        raise OSError(f"OpenCV could not write heatmap: {path}")
+_render = render_pitch_heatmap
 
 
 def build_heatmaps(tracks, fps, pitch_vertices, output_directory=None, bins=(24, 68)):
@@ -128,6 +97,9 @@ def build_heatmaps(tracks, fps, pitch_vertices, output_directory=None, bins=(24,
 
     return {
         "coordinate_system": "transformed_pitch_meters",
+        "rendering": {"style": "dark_pitch_region", "horizontal_axis": "y", "vertical_axis": "x_increasing_up",
+                      "full_pitch_registration": False, "density_smoothing": "display_only",
+                      "reference_pitch": "illustration_only_no_data_mapped"},
         "calibration": "original_fixed_pitch_region_unvalidated_for_input",
         "bounds": {"x_min": bounds[0], "x_max": bounds[1], "y_min": bounds[2], "y_max": bounds[3]},
         "grid": {"columns": bins[0], "rows": bins[1], "array_order": "y_then_x",
@@ -142,3 +114,4 @@ def build_heatmaps(tracks, fps, pitch_vertices, output_directory=None, bins=(24,
         "ball": make_map(ball, "ball.png", "Ball observed locations"),
         "excluded_samples": exclusions, "warnings": warnings,
     }
+

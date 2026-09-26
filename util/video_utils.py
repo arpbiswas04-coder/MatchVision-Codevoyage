@@ -1,5 +1,6 @@
-"""OpenCV video I/O, with explicit timing and resource cleanup."""
+﻿"""OpenCV video I/O, with explicit timing and resource cleanup."""
 import math
+from itertools import chain
 from pathlib import Path
 import cv2
 
@@ -33,22 +34,28 @@ def read_video(video_path, *, return_metadata=False):
 
 def save_video(output_video_frames, output_video_path, fps=24):
     # Default retained only for compatibility with legacy callers.
-    if not output_video_frames:
+    iterator = iter(output_video_frames)
+    first = next(iterator, None)
+    if first is None:
         raise ValueError("Cannot save an empty video")
     if not math.isfinite(fps) or fps <= 0:
         raise ValueError("FPS must be positive and finite")
     path = Path(output_video_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    height, width = output_video_frames[0].shape[:2]
+    height, width = first.shape[:2]
     out = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*'XVID'), fps, (width, height))
     try:
         if not out.isOpened():
             raise OSError(f"Cannot create video writer: {path}")
-        for frame in output_video_frames:
+        for frame in chain((first,), iterator):
             if frame.shape[:2] != (height, width):
                 raise ValueError("All video frames must have the same dimensions")
             out.write(frame)
     finally:
         out.release()
+        if hasattr(iterator, 'close'):
+            iterator.close()
     if not path.is_file() or path.stat().st_size == 0:
         raise OSError(f"Video writer produced no output: {path}")
+
+

@@ -386,3 +386,50 @@ td { font-variant-numeric: tabular-nums; }
   .report-meta { padding: 13px 0; }
   .coach-report section { padding-top: 13px; margin-top: 17px; }
 }
+
+/* Coverage windows and the scan-friendly coach report. */
+.cell-note { display: block; font-size: .67rem; color: var(--muted); margin-top: 5px; }
+.pass-cell { white-space: normal; min-width: 150px; max-width: 280px; line-height: 1.6; }
+.heatmap-panel img { width: 100%; max-height: none; background: #0b121b; }
+.tactical-metrics .metric-card { flex-wrap: wrap; gap: 8px; }
+.tactical-metrics .metric-card > small { width: 100%; line-height: 1.5; margin-top: 2px; }
+.tactical-window { border-top: 1px solid var(--border); padding-top: 18px; }
+.tactical-window label { display: grid; gap: 10px; font-size: .8rem; color: var(--muted); }
+.tactical-window .detail-list dd { max-width: 65%; text-align: right; }
+.report-snapshot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.report-snapshot .metric-card { padding: 14px; }
+.report-snapshot .metric-card > strong { margin-top: 12px; font-size: 1.45rem; }
+.observation-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; list-style: none; padding: 0 !important; }
+.observation-cards li { padding: 16px; background: #152b22; border-left: 2px solid #6b9d7b; color: #d1e5d7; margin-top: 0 !important; }
+.report-team-grid, .report-event-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.report-team-card { background: #0f1c26; padding: 19px; border: 1px solid var(--border); border-radius: 7px; }
+.report-team-card h4 { margin-top: 0 !important; }
+.report-team-card dl { margin-bottom: 0; }
+.report-team-card dl > div { padding: 11px 0; border-top: 1px solid var(--border); }
+.report-team-card dt { font-size: .75rem; color: var(--muted); }
+.report-team-card dd { margin: 5px 0; font-size: .9rem; }
+.report-team-card small { font-size: .68rem; color: var(--muted); }
+.report-timeline { padding-left: 22px; }
+.report-timeline strong { margin-right: 12px; color: var(--green); }
+.report-notes { background: #101b24; padding: 20px; }
+.report-notes p, .report-notes li { font-size: .75rem !important; }
+@media (max-width: 600px) {
+  .report-snapshot { grid-template-columns: repeat(2, 1fr); }
+  .report-team-grid, .observation-cards { grid-template-columns: 1fr; }
+}
+@media print {
+  .coach-report .metric-card, .report-team-card, .observation-cards li, .report-notes { background: white !important; color: #183522 !important; border-color: #b5cbbb; box-shadow: none; }
+  .coach-report .metric-top, .report-team-card dt, .report-team-card small { color: #41594b !important; }
+  .report-snapshot, .report-team-grid { break-inside: avoid; }
+  .report-snapshot .metric-card, .observation-cards li, .report-team-card, .report-timeline li { break-inside: avoid; page-break-inside: avoid; }
+  .report-team-grid { grid-template-columns: repeat(2, 1fr); }
+  .report-snapshot { grid-template-columns: repeat(3, 1fr); }
+  .observation-cards { grid-template-columns: repeat(2, 1fr); }
+  .coach-report .table-wrap { overflow: visible; }
+  .report-table { white-space: normal; font-size: 8pt; }
+  .report-table th, .report-table td { padding: 8px 5px; border-color: #b5cbbb; }
+  .report-table thead { background: #eaf1ec; display: table-header-group; }
+  .report-table th { color: #183522; }
+  .report-table tr { break-inside: avoid; }
+  .report-notes { padding: 12px 0; }
+}
